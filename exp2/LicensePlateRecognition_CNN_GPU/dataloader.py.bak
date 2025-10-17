@@ -1,0 +1,58 @@
+import numpy as np
+from torch.utils.data import Dataset
+from torchvision import transforms
+from PIL import Image
+
+# 载入训练数据
+class CharacterDataset(Dataset):
+    def __init__(self, txt_path, transform=None, target_transform=None):
+        image_paths = []
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for line in f.readlines():
+                line = line.rstrip()
+                words = line.split()
+                label = words[-1]
+                image_path = line[:-(label.__len__()+1)]
+                image_paths.append((image_path, label))     # (image_path, lable(str))
+        self.image_paths = image_paths
+
+        # X = []
+        # for i in range(0, len(image_paths)):
+        #     img = np.array(Image.open(image_paths[i][0]))  # 读取图像
+        #     img = img.flatten()
+        #     X.append(img)  # 构造图像矩阵
+        #
+        # self.mean = np.mean(X)
+        # print(self.mean)
+
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def getEigen(self, X, e=2):
+        Y = np.dot(X, np.transpose(X))  # 样本矩阵降维：m*wh * wh*m -> m*m
+        eigenvalue, featurevector = np.linalg.eig(Y)  # 计算特征值和特征向量(得到的是列向量构成的特征矩阵)
+        featurevector = np.transpose(featurevector)  # 将特征向量转置一下
+        eigen = []
+        for i in range(0, eigenvalue.shape[0]):  # 将特征值和特征向量绑到一起，方便排序
+            eigen.append([eigenvalue[i], featurevector[i]])
+        eigen = sorted(eigen, key=lambda eigen: eigen[0], reverse=True)  # 根据特征值大小，从大到小排序
+        eigens = []
+        for i in range(0, e):  # 计算本征
+            Y = 1 / (eigen[i][0] ** 0.5) * np.dot(eigen[i][1], X)
+            eigens.append(Y)
+        return np.array(eigens)
+
+    def __getitem__(self, index):
+        image_path, label = self.image_paths[index]
+        image = Image.open(image_path).convert('L')
+        label = int(label)
+        if self.transform is not None:
+            image = np.array(image, dtype=np.float32)
+            image = image - np.mean(image, axis=0)
+            image = self.getEigen(image, 2)
+            image = image.real
+            image = self.transform(image)                   # 转换为tensor格式（1，x，x）
+        return image, label
+    
+    def __len__(self):
+        return len(self.image_paths)
